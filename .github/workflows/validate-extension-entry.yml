@@ -53,17 +53,33 @@ jobs:
               addError('Empty "latest_url" property.');
             } else {
               // Helper to fetch JSON over HTTPS
-              const fetchJson = url => new Promise((resolve, reject) => {
+              const fetchJson = (url, redirects = 0) => new Promise((resolve, reject) => {
+                if (redirects > MAX_REDIRECTS) {
+                  return reject(new Error('Too many redirects'));
+                }
                 https.get(url, res => {
+                  const { statusCode, headers } = res;
                   let data = '';
-                  res.on('data', chunk => data += chunk);
-                  res.on('end', () => {
-                    if (res.statusCode >= 200 && res.statusCode < 300) {
-                      try { resolve(JSON.parse(data)); } catch (err) { reject(err); }
-                    } else {
-                      reject(new Error(`HTTP Status ${res.statusCode}`));
-                    }
-                  });
+
+                  // Handle 2xx OK
+                  if (statusCode >= 200 && statusCode < 300) {
+                    res.on('data', chunk => data += chunk);
+                    res.on('end', () => {
+                      try {
+                        resolve(JSON.parse(data));
+                      } catch (err) {
+                        reject(new Error('Invalid JSON: ' + err.message));
+                      }
+                    });
+                  }
+                  // Handle redirects (3xx)
+                  else if (statusCode >= 300 && statusCode < 400 && headers.location) {
+                    console.log(`Redirecting (${statusCode}) to ${headers.location}`);
+                    resolve(fetchJson(headers.location, redirects + 1));
+                  }
+                  else {
+                    reject(new Error(`HTTP Status ${statusCode}`));
+                  }
                 }).on('error', reject);
               });
 
@@ -88,20 +104,27 @@ jobs:
 
             // Post errors/warnings comment if needed
             if (errors.length > 0 || warnings.length > 0) {
-              const body = [
-                '#### Plugin Validation Report',
-                errors.length ? '**Errors:**' : null,
-                ...errors,
-                warnings.length ? '**Warnings:**' : null,
-                ...warnings,
-                '---',
-                '<sup>This check was automated. To re-run, update your PR.</sup>'
-              ].filter(Boolean).join('\n');
+              let message = [`#### Hello!\n`]
+              message.push(`**I found the following issues in your plugin submission**\n`);
+
+              if (errors.length > 0) {
+                message.push(`**Errors:**\n`);
+                message = message.concat(errors);
+                message.push(`\n---\n`);
+              }
+              if (warnings.length > 0) {
+                message.push(`**Warnings:**\n`);
+                message = message.concat(warnings);
+                message.push(`\n---\n`);
+              }
+
+              message.push(`<sup>This check was done automatically. Do <b>NOT</b> open a new PR for re-validation. Instead, to trigger this check again, make a change to your PR and wait a few minutes, or close and re-open it.</sup>`);
+
               await github.rest.issues.createComment({
+                issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                issue_number: context.issue.number,
-                body
+                body: message.join('\n'),
               });
             }
 
