@@ -1,6 +1,6 @@
 # pointy-extensions
 
-This repo hosts all downloadable extensions of the [pointy app]().
+This repo hosts all downloadable extensions of the [pointy app](https://github.com/nwrenger/pointy).
 
 ## Submit your Extension
 
