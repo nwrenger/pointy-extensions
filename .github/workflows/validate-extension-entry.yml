@@ -29,6 +29,18 @@ jobs:
             // Skip if no new lines added
             if (context.payload.pull_request.additions <= context.payload.pull_request.deletions) return;
 
+            if (context.payload.pull_request.changed_files > 1) {
+              addError('You modified files other than `extensions.json`.');
+            }
+
+            if (!context.payload.pull_request.maintainer_can_modify) {
+              addWarning('Maintainers of this repo should be allowed to edit this pull request. This speeds up the approval process.');
+            }
+
+            if (!context.payload.pull_request.body.includes('I have added a license file to my project.')) {
+              addError('You did not follow the pull request template');
+            }
+
             // Load extensions.json
             let extensions;
             try {
@@ -48,6 +60,56 @@ jobs:
             Object.keys(extension).forEach(key => {
               if (!validKeys.includes(key)) addError(`Invalid property in extension entry: ${key}`);
             });
+
+            if (extension.id?.toLowerCase().includes('pointy')) {
+              addError(`Please don't use the word \`pointy\` in the extension ID. The ID is used for your extension's folder so keeping it short and simple avoids clutter and helps with sorting.`);
+            }
+            if (extension.id?.toLowerCase().endsWith('extension')) {
+              addError(`Please don't use the word \`extension\` in the extension ID. The ID is used for your extension's folder so keeping it short and simple avoids clutter and helps with sorting.`);
+            }
+            if (extension.id && !/^[a-z0-9-_]+$/.test(extension.id)) {
+              addError('The extension ID is not valid. Only alphanumeric lowercase characters and dashes are allowed.');
+            } else if (extension.name?.toLowerCase().includes('pointy')) {
+              addError(`Please don't use the word \`Pointy\` in your extension name since it's redundant and adds clutter to the extension list.`);
+            }
+            if (extension.name?.toLowerCase().endsWith('extension')) {
+              addError(`Please don't use the word \`Exte-nsion\` in the extension name since it's redundant and adds clutter to the extension list.`);
+            }
+
+            if (extension.author && /^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$/.test(extension.author)) {
+              addWarning(`We generally discourage including your email addresses in the \`author\` field.`);
+            }
+
+            if (extension.description?.toLowerCase().includes('extension')) {
+              addError('Please don\'t include `Extension` in the extension description');
+            }
+            if (extension.description?.toLowerCase().includes('this extension') || extension.description?.toLowerCase().includes('this is a extension') || extension.description?.toLowerCase().includes('this extension allows')) {
+              addWarning('Avoid including sentences like `This is a extension that does` in your description');
+            }
+
+            if (extension.description?.length > 250) {
+              addError(`Your extension has a long description. Users typically find it difficult to read a very long description, so you should keep it short and concise.`);
+            }
+
+            if (extension.id && extensions.filter(p => p.id === extension.id).length > 1) {
+              addError(`There is already a extension with the id \`${extension.id}\`.`);
+            }
+            if (extension.name && extensions.filter(p => p.name === extension.name).length > 1) {
+              addError(`There is already a extension with the name \`${extension.name}\`.`);
+            }
+            if (extension.latest_url && extensions.filter(p => p.latest_url === extension.latest_url).length > 1) {
+              addError(`There is already a entry pointing to the \`${extension.latest_url}\` url.`);
+            }
+
+            const removedExtensions = JSON.parse(fs.readFileSync('extensions-removed.json', 'utf8'));
+
+            if (extension.id && removedExtensions.filter(e => e.id === extension.id).length > 1) {
+              addError(`Another extension used to exist with the id \`${extension.id}\`. To avoid issues for users that still have the old extension installed using this extension ID is not allowed`);
+            }
+
+            if (extension.name && removedExtensions.filter(e => e.name === extension.name).length > 1) {
+              addWarning(`Another extension used to exist with the name \`${extension.name}\`. To avoid confussion we recommend against using this name.`);
+            }
 
             // Require latest_url
             if (!extension.latest_url) {
@@ -106,7 +168,7 @@ jobs:
             // Post errors/warnings comment if needed
             if (errors.length > 0 || warnings.length > 0) {
               let message = [`#### Hello!\n`]
-              message.push(`**I found the following issues in your plugin submission**\n`);
+              message.push(`**I found the following issues in your extension submission**\n`);
 
               if (errors.length > 0) {
                 message.push(`**Errors:**\n`);

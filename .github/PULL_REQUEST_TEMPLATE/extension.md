@@ -22,6 +22,6 @@ Link to my extension:
 - [ ] My README.md describes the extension's purpose and provides clear usage instructions.
 - [ ] I have read the developer policies at `TODO_POLICIES_URL`, and have assessed my extension's adherence to these policies.
 - [ ] I have read the tips in `TODO_EXTENSION_REALSES_URL` and have self-reviewed my extension to avoid these common pitfalls.
-- [ ] I have added a license in the LICENSE file.
+- [ ] I have added a license file to my project.
 - [ ] My project respects and is compatible with the original license of any code from other libraries that I'm using.
       I have given proper attribution to these other projects in my `README.md`.
