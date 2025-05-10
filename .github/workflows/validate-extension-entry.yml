@@ -24,6 +24,7 @@ jobs:
             const warnings = [];
             const addError = msg => { errors.push(`:x: ${msg}`); console.log('Error: ' + msg); };
             const addWarning = msg => { warnings.push(`:warning: ${msg}`); console.log('Warning: ' + msg); };
+            const MAX_REDIRECTS = 5;
 
             // Skip if no new lines added
             if (context.payload.pull_request.additions <= context.payload.pull_request.deletions) return;
