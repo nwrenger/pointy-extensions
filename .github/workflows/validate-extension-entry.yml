@@ -20,7 +20,6 @@ jobs:
           script: |
             const fs = require('fs');
             const https = require('https');
-            const core = require('@actions/core');
             const errors = [];
             const warnings = [];
             const addError = msg => { errors.push(`:x: ${msg}`); console.log('Error: ' + msg); };
