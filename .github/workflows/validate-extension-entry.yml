@@ -94,7 +94,7 @@ jobs:
                 // Required platform artifacts
                 const assets = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64'];
                 assets.forEach(asset => {
-                  if (!latest[asset]) {
+                  if (!latest.assets[asset]) {
                     addError(`latest.json missing asset URL for '${asset}'.`);
                   }
                 });
