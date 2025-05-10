@@ -1,0 +1,172 @@
+name: Validate Extension Entry
+
+on:
+  pull_request_target:
+    branches:
+      - main
+    paths:
+      - extensions.json
+
+jobs:
+  extension-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "refs/pull/${{ github.event.number }}/merge"
+      - uses: actions/setup-node@v2
+      - uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const https = require('https');
+            const core = require('@actions/core');
+            const errors = [];
+            const warnings = [];
+            const addError = msg => { errors.push(`:x: ${msg}`); console.log('Error: ' + msg); };
+            const addWarning = msg => { warnings.push(`:warning: ${msg}`); console.log('Warning: ' + msg); };
+
+            // Skip if no new lines added
+            if (context.payload.pull_request.additions <= context.payload.pull_request.deletions) return;
+
+            // Load extensions.json
+            let extensions;
+            try {
+              extensions = JSON.parse(fs.readFileSync('extensions.json', 'utf8'));
+            } catch (e) {
+              addError('Could not parse extensions.json: ' + e.message);
+              return;
+            }
+
+            const extension = extensions[extensions.length - 1];
+
+            // Validate entry fields
+            const validKeys = ['id', 'name', 'author', 'version', 'description', 'latest_url'];
+            validKeys.forEach(key => {
+              if (!extension.hasOwnProperty(key)) addError(`Missing required property: ${key}`);
+            });
+            Object.keys(extension).forEach(key => {
+              if (!validKeys.includes(key)) addError(`Invalid property in extension entry: ${key}`);
+            });
+
+            // Require latest_url
+            if (!extension.latest_url) {
+              addError('Empty "latest_url" property.');
+            } else {
+              // Helper to fetch JSON over HTTPS
+              const fetchJson = url => new Promise((resolve, reject) => {
+                https.get(url, res => {
+                  let data = '';
+                  res.on('data', chunk => data += chunk);
+                  res.on('end', () => {
+                    if (res.statusCode >= 200 && res.statusCode < 300) {
+                      try { resolve(JSON.parse(data)); } catch (err) { reject(err); }
+                    } else {
+                      reject(new Error(`HTTP Status ${res.statusCode}`));
+                    }
+                  });
+                }).on('error', reject);
+              });
+
+              // Fetch and validate latest.json
+              try {
+                const latest = await fetchJson(extension.latest_url);
+                // Version match
+                if (latest.version !== extension.version) {
+                  addError(`Version mismatch: latest.json has version ${latest.version}, expected ${extension.version}.`);
+                }
+                // Required platform artifacts
+                const assets = ['darwin-aarch64', 'darwin-x86_64', 'linux-x86_64', 'windows-x86_64'];
+                assets.forEach(asset => {
+                  if (!latest[asset]) {
+                    addError(`latest.json missing asset URL for '${asset}'.`);
+                  }
+                });
+              } catch (e) {
+                addError('Unable to fetch or parse latest.json: ' + e.message);
+              }
+            }
+
+            // Post errors/warnings comment if needed
+            if (errors.length > 0 || warnings.length > 0) {
+              const body = [
+                '#### Plugin Validation Report',
+                errors.length ? '**Errors:**' : null,
+                ...errors,
+                warnings.length ? '**Warnings:**' : null,
+                ...warnings,
+                '---',
+                '<sup>This check was automated. To re-run, update your PR.</sup>'
+              ].filter(Boolean).join('\n');
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
+
+            const labels = [];
+
+            if (errors.length > 0) {
+              labels.push("Validation failed");
+              core.setFailed("Failed to validate extension");
+            }
+
+            if (errors.length === 0) {
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: context.issue.number,
+                title: `Add extension: ${extension.name}`
+              });
+
+              const comments = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number
+              });
+              const commentAuthors = comments.data.map(c => c.user.login);
+
+              if (!commentAuthors.includes("nwrenger")) {
+                await github.rest.issues.addAssignees({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  assignees: ['nwrenger']
+                });
+              }
+
+              if (!context.payload.pull_request.labels.some(label => label.name === 'Changes requested')) {
+                labels.push("Ready for review");
+              }
+            }
+            if (context.payload.pull_request.labels.some(label => label.name === 'Changes requested')) {
+              labels.push('Changes requested');
+            }
+            if (context.payload.pull_request.labels.some(label => label.name === 'Requires author rebase')) {
+              labels.push('Requires author rebase');
+            }
+            if (context.payload.pull_request.labels.some(label => label.name === 'Installation not recommended')) {
+              labels.push('Installation not recommended');
+            }
+            if (context.payload.pull_request.labels.some(label => label.name === 'Changes made')) {
+              labels.push('Changes made');
+            }
+            if (context.payload.pull_request.labels.some(label => label.name === 'Skipped code scan')) {
+              labels.push('Skipped code scan');
+            }
+            labels.push('extension');
+
+            if (labels.length) {
+              await github.rest.issues.setLabels({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                labels,
+              });
+            }
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
